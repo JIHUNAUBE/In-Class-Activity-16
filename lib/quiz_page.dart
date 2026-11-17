@@ -87,6 +87,9 @@ class _QuizPageState extends State<QuizPage> {
   bool isSaving = false;
   bool isSaved = false;
 
+  // T09 demonstration only. Set to false before the final release build.
+  static const bool simulateLostResponse = true;
+
   String? errorMessage;
   String? saveMessage;
   DateTime? lastRequestAt;
@@ -245,6 +248,16 @@ class _QuizPageState extends State<QuizPage> {
         'correctCount': score,
         'submittedAt': FieldValue.serverTimestamp(),
       });
+
+      // T09: Simulate a lost success acknowledgement AFTER a confirmed write.
+      // This tests the recovery path; it does not reproduce a real network loss.
+      if (simulateLostResponse) {
+        throw FirebaseException(
+          plugin: 'cloud_firestore',
+          code: 'unavailable',
+          message: 'T09 simulated missing success response',
+        );
+      }
 
       if (!mounted) return;
 

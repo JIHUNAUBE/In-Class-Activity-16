@@ -1,4 +1,5 @@
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
@@ -25,9 +26,7 @@ class CloudQuizApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Class A Cloud Quiz',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.teal,
-        ),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
         useMaterial3: true,
       ),
       home: const LoginPage(),
@@ -135,8 +134,6 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
                 const SizedBox(height: 24),
-
-                // Email input
                 TextField(
                   controller: emailController,
                   keyboardType: TextInputType.emailAddress,
@@ -145,10 +142,7 @@ class _LoginPageState extends State<LoginPage> {
                     border: OutlineInputBorder(),
                   ),
                 ),
-
                 const SizedBox(height: 12),
-
-                // Password input
                 TextField(
                   controller: passwordController,
                   obscureText: true,
@@ -157,22 +151,15 @@ class _LoginPageState extends State<LoginPage> {
                     border: OutlineInputBorder(),
                   ),
                 ),
-
                 const SizedBox(height: 16),
-
-                // Login error message
                 if (errorMessage != null)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: Text(
                       errorMessage!,
-                      style: const TextStyle(
-                        color: Colors.red,
-                      ),
+                      style: const TextStyle(color: Colors.red),
                     ),
                   ),
-
-                // Sign in button
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
@@ -245,8 +232,6 @@ class QuizHomePage extends StatelessWidget {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 24),
-
-              // Start Quiz button
               SizedBox(
                 width: 220,
                 child: ElevatedButton.icon(
@@ -262,9 +247,171 @@ class QuizHomePage extends StatelessWidget {
                   label: const Text('Start Quiz'),
                 ),
               ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: 220,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const SavedResultsPage(),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.history),
+                  label: const Text('View Saved Results'),
+                ),
+              ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class SavedResultsPage extends StatefulWidget {
+  const SavedResultsPage({super.key});
+
+  @override
+  State<SavedResultsPage> createState() => _SavedResultsPageState();
+}
+
+class _SavedResultsPageState extends State<SavedResultsPage> {
+  late Future<QuerySnapshot<Map<String, dynamic>>> resultsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    loadResults();
+  }
+
+  void loadResults() {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      resultsFuture = Future.error('Please sign in again.');
+      return;
+    }
+
+    resultsFuture = FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('attempts')
+        .get(const GetOptions(source: Source.server));
+  }
+
+  void refreshResults() {
+    setState(loadResults);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Saved Quiz Results'),
+        actions: [
+          IconButton(
+            tooltip: 'Refresh',
+            icon: const Icon(Icons.refresh),
+            onPressed: refreshResults,
+          ),
+        ],
+      ),
+      body: FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        future: resultsFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          }
+
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.cloud_off,
+                      color: Colors.red,
+                      size: 56,
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Could not load results from the server.',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: refreshResults,
+                      child: const Text('Try Again'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          final results = snapshot.data!.docs.toList();
+
+          results.sort((a, b) {
+            final aTime = a.data()['submittedAt'];
+            final bTime = b.data()['submittedAt'];
+
+            if (aTime is Timestamp && bTime is Timestamp) {
+              return bTime.compareTo(aTime);
+            }
+
+            return 0;
+          });
+
+          if (results.isEmpty) {
+            return const Center(
+              child: Text('No saved quiz results yet.'),
+            );
+          }
+
+          return ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: results.length,
+            itemBuilder: (context, index) {
+              final data = results[index].data();
+              final score = data['correctCount'] ?? 0;
+              final total = data['questionCount'] ?? 10;
+              final timestamp = data['submittedAt'];
+
+              String dateText = 'Unknown date';
+
+              if (timestamp is Timestamp) {
+                final date = timestamp.toDate().toLocal();
+                dateText =
+                    '${date.year}-${date.month.toString().padLeft(2, '0')}-'
+                    '${date.day.toString().padLeft(2, '0')} '
+                    '${date.hour.toString().padLeft(2, '0')}:'
+                    '${date.minute.toString().padLeft(2, '0')}';
+              }
+
+              return Card(
+                child: ListTile(
+                  leading: const Icon(
+                    Icons.emoji_events,
+                    color: Colors.teal,
+                  ),
+                  title: Text('Score: $score / $total'),
+                  subtitle: Text(
+                    'Saved: $dateText\n'
+                    'Round ID: ${results[index].id}',
+                  ),
+                  isThreeLine: true,
+                ),
+              );
+            },
+          );
+        },
       ),
     );
   }
